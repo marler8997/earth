@@ -1,0 +1,269 @@
+<html><head>
+<script id="DefaultFragmentShader" type="x-shader/x-fragment">
+precision mediump float;
+void main(void) {
+    gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+}
+</script>
+<script id="DefaultVertexShader" type="x-shader/x-vertex">
+attribute vec4 vertexPosition;
+
+uniform mat4 modelView;
+uniform mat4 projection;
+
+void main() {
+    gl_Position = projection * modelView * vertexPosition;
+}
+</script>
+<script src="gl-matrix-min.js"></script>
+<script type="text/javascript">
+
+function get(name) { return document.getElementById(name); }
+
+var gl;
+var globalProgram;
+var globalPositionBuffer;
+
+function degToRad(deg) { return deg * Math.PI / 180; }
+
+function drawScene()
+{
+    gl.clearColor(0.0, 0.0, 0.0, 1.0); // black
+    gl.clearDepth(1.0);                // clear everything
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // perspective matrix
+    const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+    const zNear = 0.1;
+    const zFar = 100.0;
+
+    const projection = mat4.create();
+    mat4.perspective(
+        projection,
+        degToRad(get('fieldOfViewDegrees').value),
+        aspect,
+        zNear, zFar);
+
+    const modelView = mat4.create();
+    mat4.translate(modelView, modelView, [
+        get('modelViewTranslateX').value,
+        get('modelViewTranslateY').value,
+        get('modelViewTranslateZ').value]);
+    mat4.rotateX(modelView, modelView, degToRad(get('modelViewRotateX').value));
+    mat4.rotateY(modelView, modelView, degToRad(get('modelViewRotateY').value));
+    mat4.rotateZ(modelView, modelView, degToRad(get('modelViewRotateZ').value));
+
+    // tell webgl how to pull out the positions from the position
+    // buffer into the vertexPosition attribute
+    {
+        const numComponents = 3;  // pull out 3 values per iteration
+        const type = gl.FLOAT;    // the data in the buffer is 32bit floats
+        const normalize = false;  // don't normalize
+        const stride = 0;         // how many bytes to get from one set of values to the next
+                                  // 0 = use type and numComponents above
+        const offset = 0;         // how many bytes inside the buffer to start from
+        gl.bindBuffer(gl.ARRAY_BUFFER, globalPositionBuffer);
+        gl.vertexAttribPointer(
+            globalProgram.attribLocations.vertexPosition,
+            numComponents,
+            type,
+            normalize,
+            stride,
+            offset);
+        gl.enableVertexAttribArray(
+            globalProgram.attribLocations.vertexPosition);
+    }
+    // Tell WebGL to use our program when drawing
+    gl.useProgram(globalProgram.glShaderProgram);
+
+    // Set the shader uniforms
+    gl.uniformMatrix4fv(
+        globalProgram.uniformLocations.projection,
+        false,
+        projection);
+    gl.uniformMatrix4fv(
+        globalProgram.uniformLocations.modelView,
+        false,
+        modelView);
+
+    {
+        const offset = 0;
+        const vertexCount = 4;
+        gl.drawArrays(gl.TRIANGLE_STRIP, offset, vertexCount);
+    }
+
+    requestAnimationFrame(drawScene);
+}
+
+//
+// creates a shader of the given type, uploads the source and
+// compiles it.
+//
+function loadShader(type, source)
+{
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    alert('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+  return shader;
+}
+function loadShaderProgram(vertexShaderSource, fragmentShaderSource)
+{
+    const vertexShader = loadShader(gl.VERTEX_SHADER, vertexShaderSource);
+    if(vertexShader === null) return null;
+    const fragmentShader = loadShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+    if(fragmentShader === null) return null;
+
+    // Create the shader program
+
+    const shaderProgram = gl.createProgram();
+    gl.attachShader(shaderProgram, vertexShader);
+    gl.attachShader(shaderProgram, fragmentShader);
+    gl.linkProgram(shaderProgram);
+
+    // If creating the shader program failed, alert
+
+    if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+      alert('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
+      return null;
+    }
+
+    return shaderProgram;
+}
+
+var controls = 
+{
+    fieldOfViewDegrees: {
+        init: 45,
+        min: 0,
+        max: 180,
+        points: 200,
+    },
+    modelViewTranslateX: {
+        init: 0.0,
+        min: -2.0,
+        max: 2.0,
+        points: 200,
+    },
+    modelViewTranslateY: {
+        init: 0.0,
+        min: -2.0,
+        max: 2.0,
+        points: 200,
+    },
+    modelViewTranslateZ: {
+        init: -6.0,
+        min: -12.0,
+        max: 0.0,
+        points: 200,
+    },
+    modelViewRotateX: {
+        init: 0.0,
+        min: -90.0,
+        max: 90.0,
+        points: 200,
+    },
+    modelViewRotateY: {
+        init: 0.0,
+        min: -90.0,
+        max: 90.0,
+        points: 200,
+    },
+    modelViewRotateZ: {
+        init: 0.0,
+        min: -90.0,
+        max: 90.0,
+        points: 200,
+    },
+}
+
+
+function bodyOnload()
+{
+    // add controls
+    {
+        var html = '';
+        for(var name in controls)
+        {
+            var control = controls[name];
+            html += '<div><label>' + name + ': </label>' +
+                '<input oninput="' + name + 'Text.value = this.value" type="range"' +
+                ' min="' + control.min + '" max="' + control.max + '" value="' + control.init + '" class="slider" id="' + name + 
+                '" step="' + ((control.max - control.min) / control.points) +'"></input>' +
+                '<output id="' + name + 'Text">' + control.init + '</output>' +
+            '</div>';
+        }
+        get('ControlsDiv').innerHTML = html;
+    }
+
+    var canvas = get('WebGLCanvas');
+
+    try { gl = canvas.getContext('webgl'); } catch(e) {
+        alert("Could not initialize WebGL: " + e);
+        return;
+    }
+    if(!gl) {
+        alert("Could not initialize WebGL");
+        return;
+    }
+    gl.viewportWidth = canvas.width;
+    gl.viewportHeight = canvas.height;
+    gl.enable(gl.DEPTH_TEST);
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // create shader
+    var glShaderProgram = loadShaderProgram(
+        get('DefaultVertexShader').innerHTML,
+        get('DefaultFragmentShader').innerHTML);
+    if(glShaderProgram === null) return;
+    globalProgram = {
+        glShaderProgram: glShaderProgram,
+        attribLocations: {
+            vertexPosition: gl.getAttribLocation(glShaderProgram, 'vertexPosition'),
+        },
+        uniformLocations: {
+            projection: gl.getUniformLocation(glShaderProgram, 'projection'),
+            modelView: gl.getUniformLocation(glShaderProgram, 'modelView'),
+        },
+    }
+
+    // create buffers
+    globalPositionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, globalPositionBuffer);
+    const positions = [
+         1.0,  1.0, 0.0,
+        -1.0,  1.0, 0.0,
+         1.0, -1.0, 0.0,
+        -1.0, -1.0, 0.0,
+    ];
+    gl.bufferData(gl.ARRAY_BUFFER,
+                  new Float32Array(positions),
+                  gl.STATIC_DRAW);
+
+    requestAnimationFrame(drawScene);
+}
+
+
+
+
+function UpdateSliderLabel(input, textDomID)
+{
+    get(textDomID).value = input.value;
+}
+
+</script>
+</head><body onload="bodyOnload()">
+<canvas id="WebGLCanvas" style="border:none" width="500" height="500">
+
+
+</canvas>
+<div id="ControlsDiv"></div>
+</body></html>
